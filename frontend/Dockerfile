@@ -19,6 +19,6 @@ COPY --from=builder /app/build /usr/share/nginx/html
 # Expose the port Nginx runs on
 EXPOSE 80
 
-#hello
+
 
 # Nginx will automatically start when the container launches.

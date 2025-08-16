@@ -1,0 +1,54 @@
+# .gitlab-ci.yml
+
+# Define the stages of our pipeline
+stages:
+  - build
+  - deploy
+
+# This 'build' job is unchanged. It builds the Docker images and pushes
+# them to GitLab's container registry.
+build_images:
+  stage: build
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  before_script:
+    - echo "Logging into GitLab Registry..."
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - echo "Building and pushing Docker images..."
+    - docker build -t $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA ./backend
+    - docker push $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA
+
+    - docker build -t $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA ./frontend
+    - docker push $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# --- THIS JOB IS NOW MUCH SIMPLER ---
+# This job deploys the application directly on the runner's shell.
+deploy_to_server:
+  stage: deploy
+  tags:
+    - deploy-vm # This tag ensures the job runs on our self-hosted runner
+  script:
+    - echo "Deploying to the server..."
+    # Navigate to the project directory on the server
+    - cd ~/my-app-project
+    
+    # Log in to the GitLab Registry
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+    # Create a .env file with the new image tags
+    - echo "Exporting image tags..."
+    - echo BACKEND_IMAGE=$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA > .env
+    - echo FRONTEND_IMAGE=$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA >> .env
+
+    # Pull the new images and restart the services
+    - echo "Pulling the latest images..."
+    - docker-compose pull
+
+    - echo "Restarting services..."
+    - docker-compose up -d --remove-orphans
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
